@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JDT</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="mlox.css">
+</head>
+<body>
+  <div id="app" class="closed" aria-hidden="true">
+    <div class="shell" id="shell">
+
+      <aside class="sidebar">
+        <div class="mx-brand" title="JDT">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M6 4h20v6H18v14a4 4 0 0 1-4 4H6v-6h6V10H6z" fill="currentColor"/>
+            <path d="M22 16h4v12h-6v-4h2z" fill="var(--accent)"/>
+          </svg>
+          <span class="brand-name">JDT</span>
+          <span class="brand-tag">MLO dev tool</span>
+        </div>
+        <nav class="nav" id="rail"></nav>
+        <button class="cmd-hint" id="cmd-open" type="button" title="Command palette (Ctrl+K)">
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="9" r="5.5"/><path d="M13.2 13.2L17 17"/></svg>
+          <span>Search</span><kbd>Ctrl K</kbd>
+        </button>
+      </aside>
+
+      <section class="mx-main">
+        <header class="topbar" id="topbar">
+          <div class="topbar-text">
+            <span class="topbar-title" id="title">JDT</span>
+            <span class="topbar-sub" id="subtitle"></span>
+          </div>
+          <div class="readout" id="readout" title="Your position (click to copy as vector4)">
+            <span class="ro"><i>x</i><b id="sb-x">0.00</b></span>
+            <span class="ro"><i>y</i><b id="sb-y">0.00</b></span>
+            <span class="ro"><i>z</i><b id="sb-z">0.00</b></span>
+            <span class="ro"><i>h</i><b id="sb-h">0.0</b></span>
+          </div>
+          <div class="topbar-right">
+            <button class="btn primary sm" id="btn-save" hidden>Save</button>
+            <button class="btn sm" id="btn-xml" onclick="openExportModal()">Export XML</button>
+            <button class="x-btn" id="btn-close" aria-label="Close">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+            </button>
+          </div>
+        </header>
+        <main id="view" tabindex="-1"></main>
+        <footer id="nowplaying" aria-live="polite"></footer>
+        <div class="statusbar" id="statusbar">
+          <span class="st st-int"><i class="st-dot" id="sb-dot"></i><span id="sb-int">outside</span></span>
+          <span class="st"><span class="st-k">room</span><span id="sb-room">—</span></span>
+          <span class="st st-frame" title="Game frame time, last 30 seconds"><span class="st-k">frame</span><canvas id="sb-spark" width="128" height="28"></canvas><span id="sb-ft">—</span></span>
+          <span class="st st-ov" id="sb-ov"><span class="st-k">overlay</span><span>off</span></span>
+          <span class="st st-grow"></span>
+          <span class="st st-ver" id="sb-ver">JDT</span>
+        </div>
+      </section>
+
+      <div class="resize" title="Drag to resize"></div>
+    </div>
+
+    <div id="palette" class="palette" hidden>
+      <div class="pal-box" role="dialog" aria-label="Command palette">
+        <div class="pal-input"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="9" r="5.5"/><path d="M13.2 13.2L17 17"/></svg>
+          <input id="pal-q" type="text" placeholder="Jump to a tab, room, portal or run a command" spellcheck="false" autocomplete="off"></div>
+        <div class="pal-list" id="pal-list"></div>
+        <div class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> run</span><span><kbd>Esc</kbd> close</span></div>
+      </div>
+    </div>
+
+    <!-- ── Entity inspector modal ── -->
+    <div id="ent-flag-modal" class="modal-wrap" onclick="closeEntFlagModal()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-hdr">
+          <span id="ent-insp-title">Entity</span>
+          <button class="x-btn" onclick="closeEntFlagModal()">✕</button>
+        </div>
+        <div class="modal-body" id="ent-insp-body"></div>
+        <div class="modal-ftr">
+          <button class="btn outline sm" onclick="closeEntFlagModal()">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Portal flag modal ── -->
+    <div id="flag-modal" class="modal-wrap" onclick="closeFlagModal()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-hdr">
+          <span id="flag-modal-title">Portal Flags</span>
+          <button class="x-btn" onclick="closeFlagModal()">✕</button>
+        </div>
+        <div class="flag-grid" id="flag-grid"></div>
+        <div class="modal-ftr">
+          <span class="mono mx-sm" id="flag-raw-val">0</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn outline sm" onclick="resetPortalFlags()">Reset portal</button>
+            <button class="btn primary sm" onclick="applyPortalFlags()">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Room modal ── -->
+    <div id="room-modal" class="modal-wrap" onclick="closeRoomModal()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-hdr">
+          <span id="room-modal-title">Room</span>
+          <button class="x-btn" onclick="closeRoomModal()">✕</button>
+        </div>
+        <div class="modal-body" id="room-modal-body"></div>
+        <div class="modal-ftr">
+          <button class="btn outline sm" onclick="closeRoomModal()">Close</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn outline sm" onclick="resetRoomFlags()">Reset room</button>
+            <button class="btn primary sm" onclick="applyRoomFlags()">Apply Flags</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Export modal ── -->
+    <div id="export-modal" class="modal-wrap" onclick="closeExportModal()">
+      <div class="modal export-modal" onclick="event.stopPropagation()">
+        <div class="modal-hdr">
+          <span>Export XML Data</span>
+          <button class="x-btn" onclick="closeExportModal()">✕</button>
+        </div>
+        <div class="export-controls">
+          <button class="export-filter-btn active" onclick="setExportMode(this,'all')">All</button>
+          <button class="export-filter-btn" onclick="setExportMode(this,'rooms')">Rooms</button>
+          <button class="export-filter-btn" onclick="setExportMode(this,'portals')">Portals</button>
+          <button class="export-filter-btn" onclick="setExportMode(this,'sets')">Entity Sets</button>
+          <div class="export-meta" id="export-meta"></div>
+        </div>
+        <pre class="export-pre mx-scroll" id="export-out">&lt;!-- Enter an interior to export data --&gt;</pre>
+        <div class="modal-ftr">
+          <button class="btn outline sm" onclick="closeExportModal()">Close</button>
+          <button class="btn primary sm" id="export-copy-btn" onclick="copyExport()">Copy XML</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="hud" hidden></div>
+  <div id="toasts" aria-live="polite"></div>
+  <div id="modal" hidden></div>
+  <div class="freemove-tip" id="freemove-tip" hidden></div>
+
+  <script src="audio.js"></script>
+  <script src="app.js"></script>
+  <script src="mlox.js"></script>
+  <script src="labels.js"></script>
+  <script src="palette.js"></script>
+  <script src="motion.js"></script>
+  <script src="emitters.js"></script>
+  <script src="player.js"></script>
+  <script src="keybinds.js"></script>
+</body>
+</html>
