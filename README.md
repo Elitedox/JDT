@@ -1,5 +1,7 @@
 # JDT: Jack's Development Tool
 
+![JDT: Jack's Development Tool](docs/images/jdt-banner.png)
+
 **An all-in-one FiveM tool for building and testing MLOs.**
 
 ![version](https://img.shields.io/badge/version-1.0.0-58c98b) ![FiveM](https://img.shields.io/badge/FiveM-cerulean-58c98b) ![license](https://img.shields.io/badge/license-LGPL--3.0-58c98b) ![dependencies](https://img.shields.io/badge/dependencies-none-58c98b)
@@ -63,6 +65,10 @@ Players can change these keys live in **Settings → Keybinds**: click a key, th
 | Placed | Everything you placed, edited live in the world. |
 | Checks | Problems to fix before exporting, with buttons that take you to them. |
 | Export | Writes the native files, either into JDT, into the MLO's resource or into a stand-alone folder. |
+
+![Room audio](docs/images/room-audio.png)
+
+![Occlusion](docs/images/occlusion.png)
 
 The audio workflow is described in [docs/usage-guide.md](docs/usage-guide.md).
 
