@@ -4,7 +4,7 @@
 
 **An all-in-one FiveM tool for building and testing MLOs.**
 
-![version](https://img.shields.io/badge/version-1.0.0-58c98b) ![FiveM](https://img.shields.io/badge/FiveM-cerulean-58c98b) ![license](https://img.shields.io/badge/license-LGPL--3.0-58c98b) ![dependencies](https://img.shields.io/badge/dependencies-none-58c98b)
+![version](https://img.shields.io/badge/version-1.1.0-58c98b) ![FiveM](https://img.shields.io/badge/FiveM-cerulean-58c98b) ![license](https://img.shields.io/badge/license-LGPL--3.0-58c98b) ![dependencies](https://img.shields.io/badge/dependencies-none-58c98b)
 
 JDT runs as one standalone resource. It needs no other resources, no build step and no permission setup.
 
@@ -20,7 +20,7 @@ JDT runs as one standalone resource. It needs no other resources, no build step 
 
 > JDT has no permission checks: everyone on the server can open it. Use it on a development server.
 
-**Updating:** replace the folder, keeping your `saved_interiors/`, `sounds/` and `data/` folders. Then run `refresh` and `ensure jdt`, or restart the server.
+**Updating:** replace the folder, keeping your `saved_interiors/`, `sounds/`, `timecycles/` and `data/` folders. Then run `refresh` and `ensure jdt`, or restart the server.
 
 ## Keys
 
@@ -45,7 +45,7 @@ Players can change these keys live in **Settings → Keybinds**: click a key, th
 | Interior | Interior stats and one row per room: flags, timecycle and the room you are in. **Edit** changes every room flag, the timecycle and the extents, with a reset per room and *Undo all changes*. |
 | Portals | Portals drawn in the world as glowing outlines with labels, coloured by type, fading with distance. Per portal: From / To rooms, flags, **Highlight** and **Go to**. |
 | Entity sets | **Found automatically.** For custom MLOs, the server reads the MLO's `.ytyp` and lists every set. For GTA's own interiors, JDT lists the sets known for that interior. Turn sets on and off one by one or all at once, delete them from the list and tint each set. The **Interior tint** bar tints an entity set, the objects in your room or every object in the interior, and can undo object tints. |
-| Timecycles | The current room's timecycle, reset, any name or hash, and 1,292 GTA timecycles to click and apply. |
+| Timecycles | **Library:** the current room's timecycle, reset, any name or hash, and 1,292 GTA timecycles (plus the ones your server streams) to click and apply. **Editor:** change a timecycle live, with every variable the game has listed (the ones a timecycle doesn't set show the game default and are added when you change them). Every variable has a slider and two values; add or remove variables, copy a timecycle under a new name, show it on screen anywhere with a strength, undo, and export: JDT writes the timecycle XML file into its `timecycles/` folder and loads it from there. |
 | Locations | Live coordinates (copy as `x, y, z`, `vector3` or `vector4`). Save, rename, filter, teleport, export and import positions. **GTA interiors:** 141 of the game's interiors in groups. Teleport loads what each one needs (IPLs) and takes you inside. |
 | Floor plan | Every room placed where its doorways are, one frame per floor, from 1 room to hundreds. Links between rooms (yellow when one-way), exits to outside, stairs and broken portals. Zoom, pan, pin rooms, click a link to edit it. |
 | Entities | Every object of the interior or around you, with filters and search. The object nearest to you or the one you aim at is outlined in the world. The inspector covers visibility, collision, opacity, teleport and copying the name, hash, `vector4` or a YMAP item. |
@@ -70,7 +70,7 @@ Players can change these keys live in **Settings → Keybinds**: click a key, th
 
 ![Occlusion](docs/images/occlusion.png)
 
-The audio workflow is described in [docs/usage-guide.md](docs/usage-guide.md).
+The audio workflow is described in [docs/usage-guide.md](docs/usage-guide.md), the timecycle editor in [docs/timecycle-editor.md](docs/timecycle-editor.md).
 
 ### Utilities
 

@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.1.0
+
+### Added
+
+**Live timecycle editor.** Timecycles now has two modes, **Library** and **Editor**. See [docs/timecycle-editor.md](docs/timecycle-editor.md).
+
+- Open any timecycle by name, or the one of the room you are standing in.
+- **All variables** lists every timecycle variable the game has, in the game's own order. The ones the timecycle doesn't set show the game default; changing one adds it. **In this timecycle** shows only the ones it sets.
+- Every variable has a slider and two value fields, and the game updates while you drag.
+- Each slider has a fixed range for its kind of variable (colours 0 – 1, distances −1 – 1000, frequencies 0 – 1000, and so on), widened to fit the game's own values. Typing a value outside the range widens that slider.
+- Add or remove variables, or put a single one back. Changed variables are marked and show what they were. *Changed only* filters the list, *Undo all* restores the timecycle.
+- **New / copy** makes a copy under a new name (or an empty timecycle), so the original stays untouched.
+- **Apply to my room** uses the timecycle for the room you are in. **Show on screen** forces it on your screen anywhere, with a strength slider.
+- **Export XML** writes `timecycles/timecycle_mods_<name>.xml` inside JDT, and JDT loads every file in that folder. The dialog also shows the XML and the `fxmanifest.lua` lines for shipping it in another resource.
+- Edits last until you leave the server. Stopping JDT puts every timecycle back and removes the ones made in it.
+
+**Audio for an MLO placed more than once.** Two apartments of one building are often the same MLO placed twice. JDT now notices when you walk into another copy and every export writes one occlusion `.ymt` per copy, next to the single `.dat151` they share. The copies are listed in **Audio project → Hashes**, where a wrong one can be removed.
+
+### Changed
+
+- Timecycles your server streams now appear in the Library by name.
+- **Reset timecycle** also undoes the values changed in the Editor.
+- Walking into another copy of an MLO moves the portal outlines to that copy.
+
+### Fixed
+
+- An MLO placed more than once only had audio in one copy: each export replaced the other copy's occlusion file.
+- Restarting an MLO resource left JDT showing its old portals, room values and undo baseline.
+- A teleport that failed part-way could block every later teleport and leave you frozen.
+- Object tinting failed on FiveM builds that only have the newer native names.
+- The outline of the selected object kept its old colour after an accent colour change.
+- Looking around with the panel open rebuilt a list every frame.
+
 ## 1.0.0
 
 First public release of JDT (Jack's Development Tool). It combines an MLO inspector, MLO audio and developer utilities in one standalone resource, with no dependencies, no build step and no permission setup.

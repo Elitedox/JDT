@@ -4,7 +4,7 @@ lua54      'yes'
 use_experimental_fxv2_oal 'yes'
 
 name        'JDT (Jack\'s Development Tool)'
-version     '1.0.0'
+version     '1.1.0'
 license     'LGPL-3.0-or-later'
 author      'Jack'
 description 'All-in-one FiveM MLO development tool.'
@@ -36,6 +36,7 @@ client_scripts {
     'client/preview.lua',
     'client/editor.lua',
     'client/inspect.lua',
+    'client/timecycle.lua',
     'client/emitters.lua',
     'client/playertools.lua',
     'client/main.lua',
@@ -74,4 +75,8 @@ files {
     'samples/doors/*.ogg',
     'samples/doors/*.mp3',
     'samples/doors/*.wav',
+    'timecycles/*.xml',
 }
+
+-- timecycles exported from Timecycles > Editor load from here
+data_file 'TIMECYCLEMOD_FILE' 'timecycles/*.xml'

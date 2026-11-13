@@ -255,6 +255,10 @@ function Scanner.rescanKeepSettings(old, interiorId)
     fresh.settings = Lib.deepcopy(old.settings)
     fresh.proxyHashOverride = old.proxyHashOverride
     fresh.createdAt = old.createdAt
+    -- keep every placement of this MLO (the one scanned now may be another copy)
+    fresh.placements = {}
+    Model.addPlacement(fresh, old.location)
+    for _, p in ipairs(old.placements or {}) do Model.addPlacement(fresh, p) end
 
     local byName = {}
     for _, r in ipairs(old.rooms) do byName[r.name] = r end

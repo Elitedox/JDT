@@ -488,15 +488,21 @@ function AudioBuild.package(group, interiors, elements, opts)
 
     for _, interior in ipairs(interiors) do
         if cfg('Output.ymt', true) ~= false and interior.output.occlusion ~= false and #interior.portals > 0 then
-            local data, st = Encoders.ymtData(interior, { maxPathDistance = opts.maxPathDistance })
-            local name = Encoders.ymtName(interior)
-            files[#files + 1] = { path = ('stream/%s.ymt'):format(name), content = Pso.build(data), binary = true }
-            if opts.xml ~= false then
-                files[#files + 1] = { path = ('xml/%s.ymt.pso.xml'):format(name), content = (Encoders.ymt(interior, { data = data, comments = opts.comments })) }
+            -- one occlusion file per placement of the MLO: the game finds it by the placement's position
+            for n, inst in ipairs(Model.instances(interior)) do
+                local data, st = Encoders.ymtData(inst, { maxPathDistance = opts.maxPathDistance })
+                local name = Encoders.ymtName(inst)
+                files[#files + 1] = { path = ('stream/%s.ymt'):format(name), content = Pso.build(data), binary = true }
+                if opts.xml ~= false then
+                    files[#files + 1] = { path = ('xml/%s.ymt.pso.xml'):format(name), content = (Encoders.ymt(inst, { data = data, comments = opts.comments })) }
+                end
+                result.ymts[#result.ymts + 1] = name
+                if n == 1 then
+                    result.stats.portals = result.stats.portals + st.portalInfos
+                    result.stats.paths = result.stats.paths + st.paths
+                end
             end
-            result.ymts[#result.ymts + 1] = name
-            result.stats.portals = result.stats.portals + st.portalInfos
-            result.stats.paths = result.stats.paths + st.paths
+            result.stats.placements = (result.stats.placements or 0) + #(interior.placements or {}) + 1
         end
     end
 
@@ -597,6 +603,9 @@ function AudioBuild.readme(group, interiors, result, opts)
         L[#L + 1] = ''
         for _, i in ipairs(interiors) do
             L[#L + 1] = ('- %s (hash %d, proxy %d, %d rooms, %d portals)'):format(i.name, i.uintNameHash, i.uintProxyHash, #i.rooms, #i.portals)
+            for n, inst in ipairs(Model.instances(i)) do
+                if n > 1 then L[#L + 1] = ('  - also placed at %.2f, %.2f, %.2f (proxy %d)'):format(inst.location.x, inst.location.y, inst.location.z, inst.uintProxyHash) end
+            end
         end
         L[#L + 1] = ''
     end

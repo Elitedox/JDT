@@ -46,6 +46,8 @@ local function setFlying(ent, on)
 end
 
 local function flyLoop()
+    if fly.running then return end   -- off and on again within one frame: the loop that is still alive carries on
+    fly.running = true
     CreateThread(function()
         local ped = PlayerPedId()
         local cp = GetGameplayCamCoord()
@@ -102,6 +104,8 @@ local function flyLoop()
             if IsEntityAVehicle(ent) then SetVehicleOnGroundProperly(ent) end
             SetGameplayCamRelativeHeading(0.0)
         end
+        fly.running = false
+        if fly.on then fly.ent = 0 flyLoop() end   -- switched back on while landing
     end)
 end
 

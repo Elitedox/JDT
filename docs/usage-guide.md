@@ -95,6 +95,12 @@ When installing into an MLO that already has its own `.dat151.rel` for the same 
 
 Placed radios and plain looping sounds become native StaticEmitters in a list named `ambient_emitter_list_NN`; GTA only loads lists named that way. Everything else (soundset sounds, random pauses, alarms, mute zones, objects) goes into the generated player script. Once a native export is loaded, the tool stops playing those elements itself so nothing plays twice.
 
+## The same MLO placed more than once
+
+Two apartments of one building are often the same MLO placed twice. The game finds a copy's audio settings (`.dat151`) by the MLO's name, so both copies share one. It finds the occlusion file (`stream/<proxy>.ymt`) by each copy's position, so every copy needs its own, or that copy plays without its room audio.
+
+Walk into each copy once with the tool open. JDT notices the second position and saves it. **Audio project → Hashes** lists every placement with its `.ymt` name, and each export writes all of them. Remove a placement there if the MLO was moved. Keep one export group for the MLO; there is nothing to merge by hand.
+
 ## When the MLO changes
 
 Open the tool inside it and use **Export → Rescan, keep settings**. Rooms are matched by name and portals by index, so your values survive.

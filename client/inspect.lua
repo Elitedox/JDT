@@ -89,6 +89,25 @@ end
 
 local originals = {} -- interior id -> { rooms = { {flag, tc} }, portals = { {flag, from, to} } }
 
+-- An MLO resource that restarts can come back with moved portals or new flags under the same interior
+-- id and the same room / portal counts: forget what is cached, so the next read is the game's.
+-- The undo baseline is only dropped for interiors that really went away with the resource, so edits
+-- you made elsewhere can still be undone.
+local function forgetInteriors(res)
+    if res == Lib.resourceName then return end
+    meta = {}
+    for _, delay in ipairs({ 500, 2500 }) do
+        SetTimeout(delay, function()
+            meta = {}
+            for int in pairs(originals) do
+                if not IsValidInterior(int) then originals[int] = nil end
+            end
+        end)
+    end
+end
+AddEventHandler('onClientResourceStart', forgetInteriors)
+AddEventHandler('onClientResourceStop', forgetInteriors)
+
 local function readRoom(int, r)
     return math.tointeger(GetInteriorRoomFlag(int, r)) or 0, u32(GetInteriorRoomTimecycle(int, r))
 end
@@ -372,14 +391,16 @@ end
 --- scope 'room' = objects in the room you stand in, else the whole interior. tint < 0 puts every object
 --- JDT tinted back to the tint it had. Objects without a palette simply keep their look.
 local objTints = {}   -- entity -> tint it had before JDT touched it
+local getObjTint = GetObjectTintIndex or GetObjectTextureVariation
+local setObjTint = SetObjectTintIndex or SetObjectTextureVariation
 local function objTint(ent)
-    local ok, v = pcall(GetObjectTextureVariation, ent)
+    local ok, v = pcall(getObjTint, ent)
     return ok and tonumber(v) or 0
 end
 function Inspect.restoreObjectTints()
     local n = 0
     for ent, orig in pairs(objTints) do
-        if DoesEntityExist(ent) then SetObjectTextureVariation(ent, orig) n = n + 1 end
+        if DoesEntityExist(ent) then setObjTint(ent, orig) n = n + 1 end
     end
     objTints = {}
     return n
@@ -397,7 +418,7 @@ function Inspect.tintObjects(tint, scope)
         if DoesEntityExist(ent) and GetInteriorFromEntity(ent) == int and (not room or GetRoomKeyFromEntity(ent) == room)
             and not IsEntityAttachedToEntity(ent, ped) then
             if objTints[ent] == nil then objTints[ent] = objTint(ent) end
-            SetObjectTextureVariation(ent, tint)
+            setObjTint(ent, tint)
             n = n + 1
         end
     end
@@ -555,15 +576,17 @@ local function drawLoop()
     if drawing then return end
     drawing = true
     CreateThread(function()
-        local c = cfg().boxColor or JDT.accent   -- the panel's accent colour unless config.lua sets one
+        local c = nil
         local outlined = nil
         local lastLabel = 0
         while selected and showBox do
             local ent = selected
             if not DoesEntityExist(ent) then selected = nil break end
-            if outlined ~= ent then
+            local want = cfg().boxColor or JDT.accent   -- the panel's accent colour unless config.lua sets one
+            if outlined ~= ent or want ~= c then
                 -- the object's own silhouette, traced by the game (no box around it)
-                if outlined and DoesEntityExist(outlined) then SetEntityDrawOutline(outlined, false) end
+                if outlined and outlined ~= ent and DoesEntityExist(outlined) then SetEntityDrawOutline(outlined, false) end
+                c = want
                 SetEntityDrawOutlineColor(c[1], c[2], c[3], 255)
                 SetEntityDrawOutlineShader(1)
                 SetEntityDrawOutline(ent, true)
@@ -596,7 +619,7 @@ local function drawLoop()
                             dist = U.round(dist, 1),
                             sx = U.round(d[2].x - d[1].x, 2), sy = U.round(d[2].y - d[1].y, 2), sz = U.round(d[2].z - d[1].z, 2),
                             visible = IsEntityVisible(ent), alpha = GetEntityAlpha(ent), collision = collisionOn(ent),
-                            frozen = IsEntityPositionFrozen(ent), lod = GetEntityLodDist(ent),
+                            frozen = IsEntityPositionFrozen(ent), lod = GetEntityLodDist and GetEntityLodDist(ent) or nil,
                             room = room >= 0 and roomLabelName(int, room) or nil,
                             door = DoorSystemFindExistingDoor(origin.x, origin.y, origin.z, hash) and true or false,
                             changed = modified[ent] ~= nil,
@@ -919,21 +942,25 @@ function Inspect.teleport(x, y, z, h)
     teleporting = true
     local ped = PlayerPedId()
     local target = IsPedInAnyVehicle(ped, false) and GetVehiclePedIsIn(ped, false) or ped
-    FreezeEntityPosition(target, true)
-    SetEntityCoords(target, x + 0.0, y + 0.0, z + 0.0, false, false, false, false)
-    if tonumber(h) then SetEntityHeading(target, tonumber(h) + 0.0) end
-    local deadline = GetGameTimer() + 5000
-    local int = GetInteriorAtCoords(x + 0.0, y + 0.0, z + 0.0)
-    if int ~= 0 then PinInteriorInMemory(int) end
-    while GetGameTimer() < deadline do
-        RequestCollisionAtCoord(x + 0.0, y + 0.0, z + 0.0)
-        local ready = HasCollisionLoadedAroundEntity(target) and (int == 0 or IsInteriorReady(int))
-        if ready then break end
-        Wait(0)
-    end
-    if int ~= 0 then UnpinInterior(int) end
-    FreezeEntityPosition(target, false)
+    -- whatever goes wrong on the way, the player is released and the next teleport still works
+    local ok, err = pcall(function()
+        FreezeEntityPosition(target, true)
+        SetEntityCoords(target, x + 0.0, y + 0.0, z + 0.0, false, false, false, false)
+        if tonumber(h) then SetEntityHeading(target, tonumber(h) + 0.0) end
+        local deadline = GetGameTimer() + 5000
+        local int = GetInteriorAtCoords(x + 0.0, y + 0.0, z + 0.0)
+        if int ~= 0 then PinInteriorInMemory(int) end
+        while GetGameTimer() < deadline do
+            RequestCollisionAtCoord(x + 0.0, y + 0.0, z + 0.0)
+            local ready = HasCollisionLoadedAroundEntity(target) and (int == 0 or IsInteriorReady(int))
+            if ready then break end
+            Wait(0)
+        end
+        if int ~= 0 then UnpinInterior(int) end
+    end)
+    if DoesEntityExist(target) then FreezeEntityPosition(target, false) end
     teleporting = false
+    if not ok then Lib.print.error('teleport failed: %s', tostring(err)) return false end
     return true
 end
 

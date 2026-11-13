@@ -307,6 +307,60 @@ function Model.syncDoors(interior, detected)
     return added
 end
 
+-- ##### Placements ##### --
+-- The same MLO can be placed more than once (two apartments of one building). The game looks its
+-- audio settings up by archetype, so one .dat151 serves every copy, but the occlusion .ymt is
+-- named after each copy's position: every placement needs its own.
+
+local MAX_PLACEMENTS = 32
+
+local function samePlace(a, b)
+    return math.abs(a.x - b.x) < 0.5 and math.abs(a.y - b.y) < 0.5 and math.abs(a.z - b.z) < 0.5
+end
+
+--- Other positions this MLO was found at (the main one is interior.location).
+function Model.sanitizePlacements(list, primary)
+    local out = {}
+    if type(list) ~= 'table' then return out end
+    for _, p in ipairs(list) do
+        if type(p) == 'table' then
+            local loc = { x = tonumber(p.x), y = tonumber(p.y), z = tonumber(p.z) }
+            if loc.x and loc.y and loc.z and loc.x == loc.x and loc.y == loc.y and loc.z == loc.z
+                and math.abs(loc.x) < 1e5 and math.abs(loc.y) < 1e5 and math.abs(loc.z) < 1e5
+                and not (primary and samePlace(loc, primary)) then
+                local dup = false
+                for _, o in ipairs(out) do if samePlace(o, loc) then dup = true break end end
+                if not dup then out[#out + 1] = loc end
+                if #out >= MAX_PLACEMENTS then break end
+            end
+        end
+    end
+    return out
+end
+
+--- Remembers another position of this MLO. Returns true when it was new.
+function Model.addPlacement(interior, loc)
+    if not loc or samePlace(loc, interior.location) then return false end
+    interior.placements = interior.placements or {}
+    for _, p in ipairs(interior.placements) do if samePlace(p, loc) then return false end end
+    if #interior.placements >= MAX_PLACEMENTS then return false end
+    interior.placements[#interior.placements + 1] = { x = loc.x + 0.0, y = loc.y + 0.0, z = loc.z + 0.0 }
+    return true
+end
+
+--- The interior once per placement, each with its own proxy hash and room keys (for the .ymt files).
+function Model.instances(interior)
+    local out = { interior }
+    for _, p in ipairs(interior.placements or {}) do
+        local copy = Lib.deepcopy(interior)
+        copy.location = { x = p.x, y = p.y, z = p.z }
+        copy.placements, copy.proxyHashOverride = nil, nil
+        Model.computeHashes(copy)
+        out[#out + 1] = copy
+    end
+    return out
+end
+
 -- ##### Construction ##### --
 
 --[[
@@ -327,6 +381,7 @@ function Model.fromScan(scan)
         updatedAt = now(),
         nameHash = scan.nameHash,
         location = { x = scan.location.x, y = scan.location.y, z = scan.location.z },
+        placements = {},
         rotation = scan.rotation and { x = scan.rotation.x, y = scan.rotation.y, z = scan.rotation.z, w = scan.rotation.w } or nil,
         archetypeName = scan.archetypeName or '',
         notes = '',
@@ -522,6 +577,7 @@ function Model.migrate(data)
         end
     end
     interior.doors = Model.sanitizeDoors(data.doors)
+    interior.placements = Model.sanitizePlacements(data.placements, interior.location)
 
     Model.computeHashes(interior)
     Model.computeTopology(interior)
@@ -552,6 +608,7 @@ function Model.applyEdits(interior, edits)
         interior.archetypeName = tostring(edits.archetypeName):gsub('%s', ''):sub(1, 64)
     end
     if edits.notes ~= nil then interior.notes = tostring(edits.notes):sub(1, 4000) end
+    if type(edits.placements) == 'table' then interior.placements = Model.sanitizePlacements(edits.placements, interior.location) end
     if edits.group ~= nil then interior.group = Lib.sanitizeFilename(edits.group) or interior.group end
     if type(edits.output) == 'table' then
         for k in pairs(interior.output) do
@@ -654,6 +711,7 @@ function Model.toSaveData(interior)
     local data = Lib.deepcopy(interior)
     data.interiorId = nil
     data.migratedFrom = nil
+    data.fromSave = nil
     for _, p in ipairs(data.portals or {}) do p.needsGeometry = nil end
     return data
 end

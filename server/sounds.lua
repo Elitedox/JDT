@@ -264,6 +264,9 @@ end
 
 --- Sends a sound's WAV to a client (panel preview), in chunks.
 function Sounds.send(src, group, key, requestId)
+    -- only sounds JDT knows: the names go into a file path
+    local list = meta.groups[group]
+    if not list or not list[key] then return nil, 'not found' end
     local data = readWav(group, key)
     if not data then return nil, 'not found' end
     local b64 = Sounds.b64encode(data)

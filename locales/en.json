@@ -677,5 +677,9 @@
   "ui_pref_compact": "Compact density",
   "ui_pref_glass": "Glass window (blur)",
   "ui_portal_overlay_shared": "Show portals in world (same overlay as MLO › Portals)",
-  "ui_overlay_settings": "Overlay settings…"
+  "ui_overlay_settings": "Overlay settings…",
+  "placement_found_title": "Another copy of this MLO",
+  "placement_found": "This MLO is placed %s times. Every copy gets its own occlusion file on export; export again to include this one.",
+  "ui_placement": "Placement %s",
+  "ui_placement_remove": "Forget this placement (its .ymt is no longer exported)"
 }

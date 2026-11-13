@@ -51,6 +51,11 @@
   // Timecycle names (~1,300, base game + every DLC up to 2025) - catalog/timecycles.json, hashed once
   let tcList = [];
   let tcHashMap = new Map();
+  function setTimecycles(list) {
+    tcList = arr(list);
+    tcHashMap = new Map(tcList.map((n) => [joaat(n), n]));
+    MX.rooms.forEach((r) => { r.tcName = hashToName(r.tcHash); });
+  }
   fetch('../catalog/timecycles.json').then((r) => r.json()).then((list) => {
     tcList = arr(list);
     tcHashMap = new Map(tcList.map((n) => [joaat(n), n]));
@@ -220,7 +225,7 @@
     switch (S.tab) {
       case 'interior': renderInterior(); break;
       case 'mportals': renderPortals(); break;
-      case 'timecycles': renderTCStatus(); renderTCGrid(); break;
+      case 'timecycles': renderTCStatus(); if (tcMode === 'editor') { const tb = qid('tce-body'); if (tb && !tb.dataset.ready && !TCE.loading) { TCE.loading = true; tceInit().finally(() => { TCE.loading = false; }); } } else renderTCGrid(); break;
       case 'locations': renderCoordsStatus(); break;
       case 'graph': renderGraph(); break;
       case 'entities': renderEntities(); break;
@@ -1056,6 +1061,16 @@
         <button class="btn outline sm danger" onclick="resetCurrentTC()">Reset timecycle</button>
       </div>
     </div>
+    <div class="mx-row tc-modes">
+      <div class="ov-seg">
+        <button data-tc-mode="library" class="${tcMode === 'library' ? 'on' : ''}">Library</button>
+        <button data-tc-mode="editor" class="${tcMode === 'editor' ? 'on' : ''}">Editor</button>
+      </div>
+      <span class="insp-note">${tcMode === 'editor' ? 'Change a timecycle live, then export it as XML' : 'Pick a timecycle for the room you are in'}</span>
+    </div>
+    ${tcMode === 'editor' ? tceSkeleton() : tcLibrarySkeleton()}`;
+
+  const tcLibrarySkeleton = () => `
     <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
       <input id="tc-custom-input" class="field-input" style="flex:1" type="text" placeholder="Any timecycle name or 0x hash, applied to the room you are in"
         spellcheck="false" autocomplete="off" onkeydown="if(event.key==='Enter') applyCustomHash()">
@@ -1068,6 +1083,396 @@
     </div>
     <div class="sec-label">Timecycle library <span class="insp-note">click one to apply it to the room you are in</span></div>
     <div class="mx-scroll" id="tc-grid"><div class="mx-empty">Loading…</div></div>`;
+
+  /* ---- live editor: the variables of one timecycle, changed in the running game ---- */
+  var tcMode = store.get('jdt:tc-mode', 'library') === 'editor' ? 'editor' : 'library';
+  const TCE = { info: null, name: store.get('jdt:tce-name', '') || '', data: null, filter: '', only: false, strength: 1, loading: false,
+    view: store.get('jdt:tce-view', 'all') === 'set' ? 'set' : 'all' };
+
+  const tceSkeleton = () => `
+    <div class="tce-bar">
+      <input id="tce-name" class="field-input mono" type="text" list="tce-names" placeholder="Timecycle to edit" spellcheck="false" autocomplete="off"
+        value="${esc(TCE.name)}" onkeydown="if(event.key==='Enter') tceLoad()">
+      <datalist id="tce-names">${tcList.map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+      <button class="btn primary sm" onclick="tceLoad()">Open</button>
+      <button class="btn outline sm" onclick="tceLoadRoom()" title="Open the timecycle of the room you are standing in">My room's</button>
+      <button class="btn outline sm" onclick="tceNew()" title="Make a copy under a new name (or an empty timecycle), so the original stays as it is">New / copy…</button>
+    </div>
+    <div id="tce-body" class="tce-body"><div class="mx-empty">Loading…</div></div>`;
+
+  const tceNum = (v) => { const n = Number(v) || 0; return String(+n.toFixed(4)); };
+  // slider range per variable: a fixed range for its kind, widened once to fit the game's own values.
+  // It is worked out the first time a variable is shown and then kept, so dragging to the end never grows it.
+  const TCE_KINDS = [
+    [/freq/, 0, 1000],
+    [/(^|_)col(our|or)?(_|$)|_col_[rgb]|(^|_)[rgb]$/, 0, 1],
+    [/exposure|(^|_)ev(_|$)/, -5, 5],
+    [/coeff|lens_dist|aberration|(^|_)shift/, -1, 1],
+    [/(multiplier|_mult)$/, 0, 10],
+    [/far_clip|clip|(^|_)dof_|_start$|_end$|range|dist|height|offset|falloff|_fall$|fog_start/, -1, 1000],
+    [/desat|noise$|vignetting_(intensity|contrast)|alpha|opacity|blend|cutoff|wrap|thresh|amount/, 0, 1],
+    [/ssao/, 0, 10],
+    [/tweak/, 0, 20],
+    [/filmic_[a-f]$|filmic_w$/, 0, 10],
+    [/size|radius|length/, 0, 10],
+    [/speed/, 0, 5],
+    [/mult|inten|bloom|strength|scale|hdr|density|exp|lod/, 0, 10],
+  ];
+  const tceNice = (x) => { if (x <= 0) return 0; const e = Math.pow(10, Math.floor(Math.log10(x))); const f = x / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; };
+  TCE.ranges = {};
+  function tceFit(lo, hi, vals) {
+    const pos = Math.max(0, ...vals), neg = Math.min(0, ...vals);
+    if (pos > hi) hi = tceNice(pos * 1.25);
+    if (neg < lo) lo = -tceNice(-neg);
+    const span = hi - lo;
+    const step = Math.min(0.001 * Math.max(1, Math.pow(10, Math.floor(Math.log10(span / 2)))), 1);
+    return { min: lo, max: hi, step };
+  }
+  function tceRange(v) {
+    const key = (TCE.data ? TCE.data.name : '') + '|' + v.n;
+    if (TCE.ranges[key]) return TCE.ranges[key];
+    const kind = TCE_KINDS.find(([re]) => re.test(v.n.toLowerCase()));
+    const def = ((TCE.info && TCE.info.vars) || []).find((x) => x.n === v.n);
+    const vals = [v.a, v.b, v.oa, v.ob, def && def.d].filter((x) => Number.isFinite(x));
+    const r = tceFit(kind ? kind[1] : 0, kind ? kind[2] : 1, vals);
+    TCE.ranges[key] = r;
+    return r;
+  }
+  // a typed value outside the slider widens that one slider so the value fits
+  function tceWiden(v, vals) {
+    const key = (TCE.data ? TCE.data.name : '') + '|' + v.n;
+    const r = TCE.ranges[key] || tceRange(v);
+    if (vals.every((x) => x >= r.min && x <= r.max)) return;
+    TCE.ranges[key] = tceFit(r.min, r.max, vals);
+  }
+  function tceRowHTML(v) {
+    if (v.removedRow) {
+      return `<div class="tce-row removed" data-tce="${esc(v.n)}">
+        <div class="tce-name"><b>${esc(v.n)}</b><span>removed, was ${tceNum(v.oa)} ${tceNum(v.ob)}</span></div><span></span><span></span><span></span>
+        <button class="es-btn" data-tce-reset title="Put it back">↺</button><span></span></div>`;
+    }
+    const changed = !v.unset && (v.added || v.a !== v.oa || v.b !== v.ob);
+    const r = tceRange(v);
+    const was = v.gone ? `removed here, was ${tceNum(v.gone.oa)} ${tceNum(v.gone.ob)}` : v.unset ? 'not in this timecycle · game default' : v.added ? 'added here' : `was ${tceNum(v.oa)} ${tceNum(v.ob)}`;
+    return `<div class="tce-row${changed ? ' changed' : ''}${v.unset ? ' unset' : ''}" data-tce="${esc(v.n)}" data-linked="${v.a === v.b ? 1 : 0}">
+      <div class="tce-name" title="${esc(v.n)}${v.i !== undefined ? ' · variable #' + v.i : ''}"><b>${esc(v.n)}</b><span>${changed || v.unset ? was : ''}</span></div>
+      <input class="tce-slider" type="range" min="${r.min}" max="${r.max}" step="${r.step}" value="${v.a}" data-tce-s title="${v.a === v.b ? 'Drag to change both values' : 'Drag to change value 1 (value 2 is different, so it stays)'}">
+      <input class="tce-val mono" type="number" step="${r.step}" value="${tceNum(v.a)}" data-tce-a title="Value 1">
+      <input class="tce-val mono" type="number" step="${r.step}" value="${tceNum(v.b)}" data-tce-b title="Value 2">
+      <button class="es-btn" data-tce-reset title="${v.gone ? 'Put it back' : 'Back to what it was'}"${changed || v.gone ? '' : ' disabled'}>↺</button>
+      <button class="es-btn es-btn-remove" data-tce-del title="Remove this variable from the timecycle"${v.unset ? ' disabled' : ''}>✕</button>
+    </div>`;
+  }
+  // every row the list can show, in the game's order ("All variables" adds the ones this timecycle doesn't set)
+  function tcePool(d, info) {
+    const order = new Map((info.vars || []).map((x, n) => [x.n, n]));
+    const have = new Set(d.vars.map((v) => v.n));
+    const removed = new Map((d.removed || []).map((r) => [r.n, r]));
+    const free = (info.vars || []).filter((x) => !have.has(x.n));
+    const pool = TCE.view === 'all'
+      ? [...d.vars, ...free.map((x) => ({ n: x.n, a: x.d, b: x.d, oa: x.d, ob: x.d, unset: true, gone: removed.get(x.n) || null }))]
+      : d.vars.slice();
+    pool.forEach((v) => { if (order.has(v.n)) v.i = order.get(v.n); });
+    pool.sort((x, y) => (x.i ?? 1e9) - (y.i ?? 1e9) || x.n.localeCompare(y.n));
+    return { pool, free };
+  }
+  // Only the rows on screen exist (plus a few above and below). Every row has the same height, so the list keeps
+  // its full length and the scrollbar is true, while opening the panel never builds hundreds of sliders.
+  const TCE_H = 46, TCE_EXTRA = 6;
+  function tceWindow(force) {
+    const l = qid('tce-list'), win = qid('tce-win');
+    if (!l || !win || !TCE.rows) return;
+    const n = TCE.rows.length;
+    const from = Math.max(0, Math.floor(l.scrollTop / TCE_H) - TCE_EXTRA);
+    const to = Math.min(n, Math.ceil((l.scrollTop + (l.clientHeight || 400)) / TCE_H) + TCE_EXTRA);
+    if (!force && from === TCE.from && to === TCE.to) return;
+    // a field being typed in or a slider being dragged stays as it is until it is let go
+    const a = document.activeElement;
+    if (!force && a && win.contains(a) && a.tagName === 'INPUT' && from <= TCE.to && to >= TCE.from) {
+      const i = TCE.rows.findIndex((x) => x.n === a.closest('.tce-row').dataset.tce);
+      if (i >= from && i < to) return;
+    }
+    TCE.from = from; TCE.to = to;
+    win.style.transform = `translateY(${from * TCE_H}px)`;
+    win.innerHTML = TCE.rows.slice(from, to).map(tceRowHTML).join('');
+  }
+  // the name suggestions of "Add a variable" are filled when the field is first used
+  document.addEventListener('focusin', (ev) => {
+    if (ev.target.id !== 'tce-add') return;
+    const dl = qid('tce-vars');
+    if (dl && !dl.children.length) dl.innerHTML = (TCE.free || []).map((x) => `<option value="${esc(x.n)}"></option>`).join('');
+  });
+  function tceRender(keep) {
+    const body = qid('tce-body');
+    if (!body) return;
+    body.dataset.ready = '1';
+    const info = TCE.info;
+    if (!info) { body.innerHTML = '<div class="mx-empty">Loading…</div>'; delete body.dataset.ready; return; }
+    if (!info.supported) { body.innerHTML = '<div class="mx-empty">This FiveM build has no timecycle editing. Update the FiveM client to use the editor.</div>'; return; }
+    const d = TCE.data;
+    if (!d || !d.ok) {
+      body.innerHTML = `<div class="mx-empty">${d && d.error ? esc(d.error) + '. ' : ''}Type a timecycle name and press Open, or use <b>My room's</b> while standing in a room.</div>`;
+      return;
+    }
+    const q = TCE.filter.toLowerCase();
+    const { pool, free } = tcePool(d, info);
+    const rows = pool.filter((v) => (!q || v.n.toLowerCase().includes(q)) && (!TCE.only || v.gone || (!v.unset && (v.added || v.a !== v.oa || v.b !== v.ob))));
+    const previewing = TCE.preview === d.name;
+    const gone = TCE.view === 'all' ? [] : (d.removed || []).filter((v) => !q || v.n.toLowerCase().includes(q));
+    const top = keep ? (qid('tce-list') ? qid('tce-list').scrollTop : TCE.top || 0) : 0;
+    TCE.rows = rows.concat(gone.map((v) => ({ ...v, removedRow: true }))); TCE.free = free;
+    const names = qid('tce-names');
+    if (names && names.children.length !== tcList.length) names.innerHTML = tcList.map((n) => `<option value="${esc(n)}"></option>`).join('');
+    body.innerHTML = `
+      <div class="tce-head">
+        <div class="tce-title"><b class="mono">${esc(d.name)}</b>
+          <span>${d.vars.length} variable${d.vars.length === 1 ? '' : 's'}${d.changed ? ` · <em>${d.changed} changed</em>` : ''}${d.created ? ' · made in JDT' : ''}</span></div>
+        <div class="tce-actions">
+          <label class="tce-prev${previewing ? ' on' : ''}" title="Force this timecycle on your screen, wherever you are">
+            <input type="checkbox" id="tce-prev"${previewing ? ' checked' : ''}> Show on screen</label>
+          <input id="tce-strength" type="range" min="0" max="2" step="0.05" value="${TCE.strength}" title="Strength on screen"${previewing ? '' : ' disabled'}>
+          <button class="btn outline sm" onclick="tceApplyRoom()" title="Use this timecycle for the room you are standing in">Apply to my room</button>
+          <button class="btn outline sm" onclick="tceResetAll()"${d.changed ? '' : ' disabled'}>Undo all</button>
+          <button class="btn primary sm" onclick="tceExport()">Export XML</button>
+          ${d.created ? '<button class="btn outline sm danger" onclick="tceDelete()">Delete</button>' : ''}
+        </div>
+      </div>
+      <div class="tce-tools">
+        <input id="tce-filter" class="field-input" type="text" placeholder="Filter variables…" spellcheck="false" autocomplete="off" value="${esc(TCE.filter)}">
+        <div class="ov-seg tce-view">
+          <button data-tce-view="all" class="${TCE.view === 'all' ? 'on' : ''}" title="Every variable the game has; the ones not in this timecycle show the game default and are added when you change them">All variables (${(info.vars || []).length || d.vars.length})</button>
+          <button data-tce-view="set" class="${TCE.view === 'set' ? 'on' : ''}">In this timecycle (${d.vars.length})</button>
+        </div>
+        <label class="tce-only"><input type="checkbox" id="tce-only"${TCE.only ? ' checked' : ''}> Changed only</label>
+        <span style="flex:1"></span>
+        <input id="tce-add" class="field-input mono" type="text" list="tce-vars" placeholder="Add a variable…" spellcheck="false" autocomplete="off">
+        <datalist id="tce-vars"></datalist>
+        <button class="btn outline sm" onclick="tceAdd()">Add</button>
+      </div>
+      <div class="tce-cols"><span>Variable</span><span></span><span>Value 1</span><span>Value 2</span><span></span><span></span></div>
+      <div class="mx-scroll tce-list" id="tce-list">${TCE.rows.length
+        ? `<div class="tce-pad" style="height:${TCE.rows.length * TCE_H}px"><div class="tce-win" id="tce-win"></div></div>`
+        : `<div class="mx-empty">${d.vars.length ? 'No variable matches' : 'This timecycle has no variables yet. Add one above.'}</div>`}
+      </div>`;
+    const l = qid('tce-list');
+    if (l) {
+      if (top) l.scrollTop = top;
+      TCE.top = l.scrollTop;
+      l.addEventListener('scroll', () => { if (l.isConnected) { TCE.top = l.scrollTop; tceWindow(); } }, { passive: true });
+    }
+    tceWindow(true);
+  }
+  // after one value changed: redraw that row and the counts only
+  function tceRefreshRow(name) {
+    const d = TCE.data, info = TCE.info;
+    if (!d || !d.ok || !info || TCE.only || !TCE.rows) return tceRender(true);
+    const v = tcePool(d, info).pool.find((x) => x.n === name);
+    const i = TCE.rows.findIndex((x) => x.n === name);
+    if (!v || i < 0) return tceRender(true);
+    TCE.rows[i] = v;
+    const row = [...document.querySelectorAll('#tce-win .tce-row')].find((r) => r.dataset.tce === name);
+    if (row) row.outerHTML = tceRowHTML(v);
+    const head = document.querySelector('.tce-title span');
+    if (head) head.innerHTML = `${d.vars.length} variable${d.vars.length === 1 ? '' : 's'}${d.changed ? ` · <em>${d.changed} changed</em>` : ''}${d.created ? ' · made in JDT' : ''}`;
+    const undo = [...document.querySelectorAll('.tce-actions .btn')].find((b) => b.textContent === 'Undo all');
+    if (undo) undo.disabled = !d.changed;
+    const setBtn = document.querySelector('[data-tce-view="set"]');
+    if (setBtn) setBtn.textContent = `In this timecycle (${d.vars.length})`;
+  }
+  async function tceInit() {
+    if (!TCE.info) {
+      const info = await nui('tc:info', {});
+      TCE.info = info && typeof info.supported === 'boolean' ? info : { supported: false, list: [], vars: [] };
+      TCE.preview = TCE.info.preview ? TCE.info.preview.name : null;
+      if (TCE.info.preview) TCE.strength = TCE.info.preview.strength;
+      // timecycles the server streams are not in the catalog: the game's own list has them
+      const extra = arr(TCE.info.list).filter((n) => !tcHashMap.has(joaat(n)));
+      if (extra.length) { setTimecycles([...tcList, ...extra].sort((a, b) => a.localeCompare(b))); _prevTCKey = null; }
+    }
+    if (TCE.name && TCE.info.supported && TCE.tried !== TCE.name) await tceOpen(TCE.name, true);
+    else tceRender(true);
+  }
+  async function tceOpen(name, quiet) {
+    name = String(name || '').trim();
+    if (!name) { if (!quiet) toast('warning', 'No timecycle', 'Type a timecycle name first.'); tceRender(); return; }
+    TCE.tried = name;
+    const d = await nui('tc:get', { name });
+    TCE.data = d && typeof d === 'object' ? d : { ok: false, error: 'Restart jdt so the game loads the latest files' };
+    if (TCE.data.ok) { TCE.name = TCE.data.name; store.set('jdt:tce-name', TCE.name); const i = qid('tce-name'); if (i) i.value = TCE.name; }
+    else if (!quiet && TCE.data.error) toast('error', 'Timecycle not opened', TCE.data.error);
+    tceRender();
+  }
+  window.tceLoad = () => tceOpen(qid('tce-name') ? qid('tce-name').value : '');
+  window.tceLoadRoom = () => {
+    const room = currentRoom();
+    if (!room) return toast('warning', 'Not in a room', 'Walk into a room of the interior first.');
+    if (!room.tcHash || room.tcName === 'none') return toast('warning', 'No timecycle', `${room.name} has no timecycle. Pick one in Library first.`);
+    const name = room.tcName || hashToName(room.tcHash);
+    if (/^(0x|\d+$)/i.test(name)) return toast('warning', 'Unknown timecycle', 'This room uses a timecycle JDT has no name for. Type its name to open it.');
+    tceOpen(name);
+  };
+  window.tceNew = () => {
+    const src = TCE.data && TCE.data.ok ? TCE.data.name : '';
+    modal(`<h2>${src ? `Copy ${esc(src)}` : 'New timecycle'}</h2>
+      <p class="muted small">${src ? `A copy of <b>${esc(src)}</b> under a new name. The original stays as it is.` : 'An empty timecycle. Add variables to it in the editor.'}</p>
+      <input id="tce-new-name" class="field-input mono" type="text" maxlength="64" spellcheck="false" autocomplete="off" value="${esc(src ? src + '_custom' : 'my_timecycle')}">
+      ${src ? '<label class="tce-only" style="margin-top:10px"><input type="checkbox" id="tce-new-copy" checked> Copy its variables</label>' : ''}
+      <div class="row end"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" data-modal-ok>Create</button></div>`,
+    async (card) => {
+      const name = ($('#tce-new-name', card).value || '').trim();
+      const box = $('#tce-new-copy', card);
+      const r = await nui('tc:clone', { name, source: box && box.checked ? src : null });
+      if (!r || !r.ok) return toast('error', 'Not created', (r && r.error) || 'Restart jdt so the game loads the latest files');
+      if (!tcHashMap.has(joaat(r.name))) { setTimecycles([...tcList, r.name].sort((a, b) => a.localeCompare(b))); _prevTCKey = null; }
+      toast('success', 'Timecycle created', r.name);
+      tceOpen(r.name);
+    });
+  };
+  window.tceDelete = async () => {
+    const d = TCE.data; if (!d || !d.ok) return;
+    const r = await nui('tc:delete', { name: d.name });
+    if (!r || !r.ok) return toast('error', 'Not deleted', (r && r.error) || '');
+    if (TCE.preview === d.name) TCE.preview = null;
+    toast('success', 'Timecycle deleted', d.name);
+    TCE.data = null; TCE.name = ''; store.set('jdt:tce-name', '');
+    const i = qid('tce-name'); if (i) i.value = '';
+    tceRender();
+  };
+  window.tceApplyRoom = () => { if (TCE.data && TCE.data.ok) applyTCName(TCE.data.name); };
+  window.tceResetAll = async () => {
+    const d = TCE.data; if (!d || !d.ok) return;
+    const r = await nui('tc:reset', { name: d.name });
+    if (r && r.ok) { TCE.data = r; tceRender(); toast('success', 'Changes undone', d.name); }
+  };
+  window.tceAdd = async () => {
+    const d = TCE.data, inp = qid('tce-add'); if (!d || !d.ok || !inp) return;
+    const name = inp.value.trim();
+    const known = (TCE.info.vars || []).find((x) => x.n.toLowerCase() === name.toLowerCase());
+    if (!known) return toast('warning', 'Unknown variable', 'Pick one from the list: start typing to search.');
+    if (d.vars.some((v) => v.n === known.n)) return toast('warning', 'Already there', known.n);
+    await nui('tc:set', { name: d.name, var: known.n, a: known.d, b: known.d });
+    TCE.filter = ''; TCE.only = false;
+    await tceOpen(d.name, true);
+    const at = (TCE.rows || []).findIndex((x) => x.n === known.n), l = qid('tce-list');
+    if (at >= 0 && l) {
+      if (at * TCE_H < l.scrollTop || (at + 1) * TCE_H > l.scrollTop + l.clientHeight) l.scrollTop = Math.max(0, at * TCE_H - l.clientHeight / 2);
+      tceWindow(true);
+      const row = [...document.querySelectorAll('#tce-win .tce-row')].find((x) => x.dataset.tce === known.n);
+      if (row) row.classList.add('flash');
+    }
+  };
+  // timecycle XML, ready for a resource (data_file 'TIMECYCLEMOD_FILE')
+  function tceXML(d) {
+    const f = (n) => (Number(n) || 0).toFixed(3);
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<timecycle_modifier_data version="1.000000">
+  <modifier name="${d.name}" numMods="${d.vars.length}" userFlags="0">
+${d.vars.map((v) => `    <${v.n}>${f(v.a)} ${f(v.b)}</${v.n}>`).join('\n')}
+  </modifier>
+</timecycle_modifier_data>
+`;
+  }
+  window.tceExport = async () => {
+    const d = TCE.data; if (!d || !d.ok) return;
+    const r = await nui('tc:export', { name: d.name });
+    const xml = (r && r.xml) || tceXML(d);
+    const saved = r && r.ok;
+    if (saved) toast('success', 'Timecycle file written', r.file);
+    else toast('warning', 'File not written', (r && r.error) || 'Restart jdt so the game loads the latest files');
+    const gta = !d.created;
+    modal(`<h2>${esc(d.name)} exported</h2>
+      ${saved ? `<p class="muted small">Written on the server: <span class="mono">jdt/${esc(r.file)}</span> (${r.count} variables).<br>
+        JDT loads every file in that folder: run <span class="mono">refresh</span> and <span class="mono">ensure jdt</span> and everyone gets this timecycle, also after a server restart.</p>`
+    : '<p class="muted small">The file could not be written on the server, so here is the XML to save yourself.</p>'}
+      ${gta ? `<p class="muted small"><b>${esc(d.name)}</b> is one of the game's own timecycles. A file with the same name may not replace it on every game build: to be sure, use <b>New / copy</b>, export the copy and apply that to your rooms.</p>` : ''}
+      <p class="muted small">To ship it in another resource, copy the file there and add these lines to that resource's <span class="mono">fxmanifest.lua</span>:</p>
+      <pre class="tce-xml mono">files { 'timecycle_mods_${esc(d.name)}.xml' }\ndata_file 'TIMECYCLEMOD_FILE' 'timecycle_mods_${esc(d.name)}.xml'</pre>
+      <textarea id="tce-xml" class="mono" rows="10" readonly spellcheck="false">${esc(xml)}</textarea>
+      <div class="row end"><button class="btn ghost" data-close-modal>Close</button><button class="btn primary" data-tce-copy>Copy XML</button></div>`);
+  };
+  document.addEventListener('click', (ev) => {
+    if (!ev.target.closest('[data-tce-copy]')) return;
+    const ta = qid('tce-xml'); if (!ta) return;
+    copyStr(ta.value);
+    toast('success', 'XML copied', 'Paste it into the file');
+  });
+
+  // value edits: the game gets them while you drag, the row re-reads when you let go
+  let tceTimer = 0;
+  const tceSend = (name, v, a, b) => { clearTimeout(tceTimer); tceTimer = setTimeout(() => nui('tc:set', { name, var: v, a, b }), 25); };
+  document.addEventListener('input', (ev) => {
+    const row = ev.target.closest && ev.target.closest('#tce-list .tce-row');
+    const d = TCE.data;
+    if (row && d && d.ok) {
+      const A = row.querySelector('[data-tce-a]'), B = row.querySelector('[data-tce-b]'), S2 = row.querySelector('[data-tce-s]');
+      if (!A) return;
+      if (ev.target === S2) { const linked = row.dataset.linked !== '0'; A.value = tceNum(S2.value); if (linked) B.value = A.value; }
+      const a = Number(A.value), b = Number(B.value);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || A.value === '' || B.value === '') return;
+      if (ev.target === A || ev.target === B) {
+        const vv = d.vars.find((x) => x.n === row.dataset.tce) || { n: row.dataset.tce, a, b };
+        if (vv) { tceWiden(vv, [a, b]); const r = TCE.ranges[d.name + '|' + vv.n]; S2.min = r.min; S2.max = r.max; S2.step = r.step; A.step = B.step = r.step; }
+      }
+      if (ev.target === A) S2.value = a;
+      const v = d.vars.find((x) => x.n === row.dataset.tce);
+      if (v) { v.a = a; v.b = b; row.classList.toggle('changed', v.added || v.a !== v.oa || v.b !== v.ob); }
+      const wr = (TCE.rows || []).find((x) => x.n === row.dataset.tce);
+      if (wr && wr !== v) { wr.a = a; wr.b = b; }
+      tceSend(d.name, row.dataset.tce, a, b);
+      return;
+    }
+    if (ev.target.id === 'tce-filter') { TCE.filter = ev.target.value.trim(); tceRenderKeepFocus('tce-filter'); }
+    if (ev.target.id === 'tce-strength' && TCE.preview) { TCE.strength = Number(ev.target.value) || 0; nui('tc:preview', { name: TCE.preview, strength: TCE.strength }); }
+  });
+  function tceRenderKeepFocus(id) {
+    const el = qid(id), pos = el ? el.selectionStart : 0;
+    tceRender();
+    const n = qid(id); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* not a text field */ } }
+  }
+  document.addEventListener('change', async (ev) => {
+    const d = TCE.data;
+    if (ev.target.id === 'tce-only') { TCE.only = ev.target.checked; tceRender(); return; }
+    if (ev.target.id === 'tce-prev' && d && d.ok) {
+      const r = await nui('tc:preview', { on: ev.target.checked, name: d.name, strength: TCE.strength });
+      TCE.preview = r && r.on ? d.name : null;
+      tceRender();
+      return;
+    }
+    // a value field or slider was let go: refresh the row's "was" note and the changed count
+    if (ev.target.closest && ev.target.closest('#tce-list .tce-row') && d && d.ok) {
+      clearTimeout(tceTimer);
+      const row = ev.target.closest('.tce-row');
+      const v = d.vars.find((x) => x.n === row.dataset.tce);
+      if (v) await nui('tc:set', { name: d.name, var: v.n, a: v.a, b: v.b });
+      else {
+        // a variable this timecycle didn't have: changing it adds it
+        const a = Number(row.querySelector('[data-tce-a]').value), b = Number(row.querySelector('[data-tce-b]').value);
+        if (Number.isFinite(a) && Number.isFinite(b)) await nui('tc:set', { name: d.name, var: row.dataset.tce, a, b });
+      }
+      const fresh = await nui('tc:get', { name: d.name });
+      if (fresh && fresh.ok) { TCE.data = fresh; tceRefreshRow(row.dataset.tce); }
+    }
+  });
+  document.addEventListener('click', async (ev) => {
+    const tv = ev.target.closest('[data-tce-view]');
+    if (tv) { TCE.view = tv.dataset.tceView; store.set('jdt:tce-view', TCE.view); tceRender(); return; }
+    const m = ev.target.closest('[data-tc-mode]');
+    if (m) {
+      if (m.dataset.tcMode === tcMode) return;
+      tcMode = m.dataset.tcMode; store.set('jdt:tc-mode', tcMode);
+      _prevTCKey = null;
+      render();
+      return;
+    }
+    const row = ev.target.closest('#tce-list .tce-row');
+    const d = TCE.data;
+    if (!row || !d || !d.ok) return;
+    const top = qid('tce-list').scrollTop;
+    let r = null;
+    if (ev.target.closest('[data-tce-del]')) r = await nui('tc:remove', { name: d.name, var: row.dataset.tce });
+    else if (ev.target.closest('[data-tce-reset]')) r = await nui('tc:reset', { name: d.name, var: row.dataset.tce });
+    if (r && r.ok) { TCE.data = r; tceRender(true); }
+  });
 
   function currentRoom() { return MX.rooms.find((r) => r.id === MX.currentRoomId); }
   function renderTCStatus() {
@@ -1115,10 +1520,24 @@
     if (!room) return toast('warning', 'Not in a room', 'Walk into a room of the interior first.');
     nuiPost('setRoomTimecycle', { roomId: room.id, value: joaat(name) });
   }
-  function resetCurrentTC() {
+  async function resetCurrentTC() {
     const room = currentRoom();
     if (!room) return;
+    // the values changed in the Editor go back too: of the timecycle the room shows now and of the one it started with
+    const names = new Set();
+    [room.tcName || hashToName(room.tcHash), hashToName(room.originalTcHash)].forEach((n) => { if (n && n !== 'none' && !/^(0x|\d+$)/i.test(n)) names.add(n); });
+    let undone = 0;
+    for (const n of names) {
+      const before = TCE.data && TCE.data.ok && TCE.data.name === n ? TCE.data.changed : null;
+      let r = null;
+      try { r = await nui('tc:reset', { name: n }); } catch (e) { /* the room still goes back below */ }
+      if (r && r.ok) {
+        if (before) undone += before;
+        if (TCE.data && TCE.data.ok && TCE.data.name === n) { TCE.data = r; if (tcMode === 'editor') tceRender(true); }
+      }
+    }
     nuiPost('clearRoomTimecycle', { roomId: room.id, value: room.originalTcHash || 0 });
+    toast('success', 'Timecycle reset', undone ? `${room.name}: its timecycle and ${undone} changed value${undone === 1 ? '' : 's'} are back` : `${room.name} is back to its own timecycle`);
   }
   function applyCustomHash() {
     const input = qid('tc-custom-input');

@@ -278,6 +278,7 @@ function buildEdits() {
     group: i.group,
     output: i.output,
     doors: obj(i.doors),
+    placements: arr(i.placements),
     proxyHashOverride: i.proxyHashOverride === undefined || i.proxyHashOverride === null ? false : i.proxyHashOverride,
     settings: i.settings,
     rooms: i.rooms.map((r) => ({ preset: r.preset || '', dat151: r.dat151 })),
@@ -623,7 +624,10 @@ const DERIVED = {
       <div class="k">${esc(t('ui_proxy_hash'))}</div><div class="v">${u32(i.proxyHash)}</div><div class="v muted">${i.proxyHash}</div>
       <div class="k">${esc(t('ui_interior_name'))}</div><div class="v" style="grid-column: span 2">${esc(i.name)}
         ${match === true ? `<span class="chip ok">${esc(t('ui_matches_hash'))}</span>` : match === false ? `<span class="chip bad">${esc(t('ui_hash_mismatch'))}</span>` : ''}</div>
-      <div class="k">${esc(t('ui_location'))}</div><div class="v" style="grid-column: span 2">${[i.location.x, i.location.y, i.location.z].map((n) => Number(n).toFixed(2)).join(', ')}</div>`;
+      <div class="k">${esc(t('ui_location'))}</div><div class="v" style="grid-column: span 2">${[i.location.x, i.location.y, i.location.z].map((n) => Number(n).toFixed(2)).join(', ')}</div>
+      ${arr(a.placements).map((p, n) => `<div class="k">${esc(t('ui_placement', n + 2))}</div>
+        <div class="v">${[p.x, p.y, p.z].map((v) => Number(v).toFixed(2)).join(', ')}</div>
+        <div class="v muted row" style="gap: 6px">${esc(p.ymt)}.ymt<button class="btn icon sm ghost danger" data-placement-del="${n}" title="${esc(t('ui_placement_remove'))}">${icon('close', 12)}</button></div>`).join('')}`;
   },
   stats() {
     const s = (S.analysis && S.analysis.summary) || {};
@@ -636,7 +640,7 @@ const DERIVED = {
   },
   files() {
     const a = S.analysis || {};
-    return `<div class="f"><span>stream/${esc(a.ymtName || '')}.ymt</span><span class="muted">${esc(t('ui_file_ymt'))}</span></div>
+    return [a.ymtName, ...arr(a.placements).map((p) => p.ymt)].map((y) => `<div class="f"><span>stream/${esc(y || '')}.ymt</span><span class="muted">${esc(t('ui_file_ymt'))}</span></div>`).join('') + `
       <div class="f"><span>${esc(a.relName || '')}</span><span class="muted">${esc(t('ui_file_dat151'))}</span></div>
       <div class="f"><span>${esc(a.listName || '')}</span><span class="muted">${esc(t('ui_file_list'))}</span></div>
       ${S.interior && arr(S.custom[S.interior.group]).length ? `<div class="f"><span>audio/${esc(safeName(S.interior.group))}_sounds.dat54.rel</span><span class="muted">${esc(t('ui_file_dat54'))}</span></div>
@@ -2881,6 +2885,11 @@ document.addEventListener('click', async (ev) => {
   // doors
   if (d.doorTest) return nui('doorTest', { key: d.doorTest });
   if (d.doorDetect) { const r = await action('doorDetect', { key: d.doorDetect }); if (r && r.detected) toast('success', t('ui_door_detected', t('ui_kind_' + r.detected))); return; }
+  if (d.placementDel !== undefined) {
+    S.interior.placements = arr(S.interior.placements).filter((_, n) => n !== +d.placementDel);
+    if (S.analysis) S.analysis.placements = arr(S.analysis.placements).filter((_, n) => n !== +d.placementDel);
+    markDirty(0); return render();
+  }
   if (d.doorDel) { delete S.interior.doors[d.doorDel]; markDirty(0); return render(); }
 
   // portals / map / checks

@@ -203,6 +203,22 @@ handlers.resources = function()
     return Export.resources()
 end
 
+-- Timecycles > Editor > Export XML: one file per timecycle in jdt/timecycles (loaded by the manifest)
+handlers.tcExport = function(src, name, xml)
+    name = Lib.sanitizeFilename(name)
+    if not name or not name:match('^[%w_%-%.]+$') then return { ok = false, error = 'invalid timecycle name' } end
+    if type(xml) ~= 'string' or #xml > 262144 or xml:sub(1, 5) ~= '<?xml' or not xml:find('<timecycle_modifier_data', 1, true) then
+        return { ok = false, error = 'not a timecycle file' }
+    end
+    local dir = Storage.path('timecycles')
+    if not Storage.ensureDir(dir) then return { ok = false, error = 'cannot create the timecycles folder' } end
+    local file = ('timecycles/timecycle_mods_%s.xml'):format(name)
+    local ok, err = Storage.write(Storage.path(file), xml)
+    if not ok then return { ok = false, error = tostring(err or 'cannot write the file') } end
+    Lib.print.info('timecycle %s written to %s', name, file)
+    return { ok = true, file = file }
+end
+
 handlers.importFrom = function(src, res, data)
     local interior, err = validateInterior(data)
     if not interior then return { ok = false, error = err } end

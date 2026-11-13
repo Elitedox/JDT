@@ -60,6 +60,13 @@ local function analysis(interior)
         summary = Validate.summary(interior, opts),
         archetypeMatch = Model.archetypeNameMatches(interior),
         ymtName = Encoders.ymtName(interior),
+        placements = (function()
+            local out = {}
+            for n, inst in ipairs(Model.instances(interior)) do
+                if n > 1 then out[#out + 1] = { x = inst.location.x, y = inst.location.y, z = inst.location.z, ymt = Encoders.ymtName(inst) } end
+            end
+            return out
+        end)(),
         relName = AudioBuild.paths(interior.group).rel,
         listName = AudioBuild.listName(interior.group),
     }
@@ -105,6 +112,21 @@ local function save(interior, silent)
     return res
 end
 
+--- Standing in another copy of an MLO that already has a project: remember where it is, so the
+--- export also writes the occlusion file of this copy (each copy needs its own .ymt).
+local function notePlacement(interior, interiorId)
+    if not interior or not interiorId or interiorId == 0 then return end
+    local loc = GetInteriorLocationAndNamehash(interiorId)
+    if not loc then return end
+    local x, y, z = loc.x or loc[1], loc.y or loc[2], loc.z or loc[3]
+    if not (x and y and z) then return end
+    if Model.addPlacement(interior, { x = x, y = y, z = z }) then
+        notify('info', locale('placement_found_title'), locale('placement_found', #interior.placements + 1))
+        -- a project that was already saved keeps the new placement straight away
+        if interior.fromSave then CreateThread(function() save(interior, true) end) end
+    end
+end
+
 local function adoptLoaded(data, interiorId)
     local ok, interior = pcall(Model.migrate, data)
     if not ok then
@@ -112,6 +134,7 @@ local function adoptLoaded(data, interiorId)
         return nil
     end
     interior.interiorId = interiorId
+    interior.fromSave = true
 
     local _, nameHash = GetInteriorLocationAndNamehash(interiorId)
     if Hash.toInt32(nameHash) ~= interior.nameHash then
@@ -149,7 +172,10 @@ local function resolveInterior(interiorId, mode)
     end
 
     if mode ~= 'reload' and cache[key] then
+        -- another copy of the same MLO: its portals are somewhere else in the world
+        if cache[key].interiorId ~= interiorId then Scanner.refreshGeometry(cache[key], interiorId) end
         cache[key].interiorId = interiorId
+        notePlacement(cache[key], interiorId)
         return cache[key]
     end
 
@@ -158,6 +184,7 @@ local function resolveInterior(interiorId, mode)
         if data then
             local interior = adoptLoaded(data, interiorId)
             if interior then
+                notePlacement(interior, interiorId)
                 cache[key] = interior
                 return interior
             end
@@ -310,6 +337,7 @@ end
 
 -- ##### Background: auto-save, free-move input blocking ##### --
 
+local BLOCKED = { 24, 25, 37, 44, 45, 140, 141, 142, 143, 257, 263, 264 }   -- attack / aim / weapon wheel while looking around
 CreateThread(function()
     while true do
         local sleep = 1000
@@ -317,9 +345,7 @@ CreateThread(function()
         if panelOpen then
             if freeMove and Config.UI.blockAttackWhileOpen then
                 sleep = 0
-                for _, control in ipairs({ 24, 25, 37, 44, 45, 140, 141, 142, 143, 257, 263, 264 }) do
-                    DisableControlAction(0, control, true)
-                end
+                for i = 1, #BLOCKED do DisableControlAction(0, BLOCKED[i], true) end
                 DisablePlayerFiring(PlayerId(), true)
             end
 

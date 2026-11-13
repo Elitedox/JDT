@@ -1302,3 +1302,55 @@ main#view:not(.mx-tab) > h2:first-child + .lead { margin-top: 0; color: var(--fg
 .gi-row.wp-teleporting { background: rgba(var(--accent-rgb), .08); }
 .gi-row .wp-btn-tp { background: var(--bg-3); color: var(--fg-2); border-color: var(--line-2); box-shadow: none; }
 .gi-row:hover .wp-btn-tp { background: var(--accent); color: #1a1a19; border-color: var(--accent); }
+
+/* Timecycles > Editor */
+.tc-modes { align-items: center; gap: 12px; }
+.tc-modes .ov-seg button.on { color: var(--accent); }
+.tce-bar { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; flex-shrink: 0; }
+.tce-body { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.tce-head { display: flex; align-items: center; gap: 12px; padding: 9px 12px; background: var(--bg-1); border: 1px solid var(--line); flex-shrink: 0; flex-wrap: wrap; }
+.tce-title { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.tce-title b { font-size: 14px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tce-title span { font-size: 11px; color: var(--fg-3); }
+.tce-title em { font-style: normal; color: var(--accent); }
+.tce-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tce-prev, .tce-only { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-2); cursor: pointer; white-space: nowrap; }
+.tce-prev.on { color: var(--accent); }
+.tce-prev input, .tce-only input { accent-color: var(--accent); margin: 0; }
+#tce-strength { width: 90px; accent-color: var(--accent); }
+#tce-strength:disabled { opacity: .35; }
+.tce-tools { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.tce-tools #tce-filter { width: 200px; padding: 5px 9px; font-size: 11px; }
+.tce-tools #tce-add { width: 230px; padding: 5px 9px; font-size: 11px; }
+.tce-cols, .tce-row { display: grid; grid-template-columns: minmax(170px, 1.5fr) minmax(90px, 1fr) 76px 76px 28px 28px; gap: 8px; align-items: center; }
+.tce-cols { padding: 0 18px 0 10px; font-size: 11px; color: var(--fg-3); flex-shrink: 0; }
+.tce-list { flex: 1; min-height: 120px; }
+.tce-row { padding: 5px 10px; border-bottom: 1px solid var(--line); border-left: 2px solid transparent; transition: background .15s; }
+.tce-row:hover { background: var(--bg-2); }
+.tce-row.changed { border-left-color: var(--accent); background: rgba(var(--accent-rgb), .045); }
+.tce-row.removed { opacity: .6; }
+.tce-row.unset .tce-name b { color: var(--fg-3); font-weight: 400; }
+.tce-row.unset .tce-val { color: var(--fg-3); }
+.tce-row.unset:hover .tce-name b, .tce-row.unset:focus-within .tce-name b { color: var(--fg-2); }
+.tce-view button { white-space: nowrap; }
+.tce-row.removed .tce-name b { text-decoration: line-through; }
+.tce-row.flash { animation: tceFlash 1.2s ease; }
+@keyframes tceFlash { from { background: rgba(var(--accent-rgb), .3); } }
+.tce-name { display: grid; min-width: 0; }
+.tce-name b { font: 500 12px/1.25 var(--mono); color: var(--fg); overflow-wrap: anywhere; }   /* long names wrap: several differ only at the end */
+.tce-name span { font-size: 10.5px; color: var(--fg-3); min-height: 0; }
+.tce-name span:empty { display: none; }
+.tce-slider { width: 100%; accent-color: var(--accent); margin: 0; }
+.tce-val { width: 100%; padding: 4px 6px; background: var(--bg-0, #0d0d0e); border: 1px solid var(--line-2); color: var(--fg); font-size: 12px; text-align: right; border-radius: 0; box-sizing: border-box; }
+.tce-val:focus { outline: none; border-color: var(--accent); }
+.tce-val::-webkit-inner-spin-button { display: none; }
+.tce-row .es-btn { padding: 3px 0; width: 28px; text-align: center; }
+.tce-row .es-btn:disabled { visibility: hidden; }
+.tce-xml { margin: 8px 0; padding: 9px 11px; background: var(--bg-1); border: 1px solid var(--line); font-size: 11.5px; white-space: pre-wrap; word-break: break-all; color: var(--fg-2); }
+#tce-xml { width: 100%; box-sizing: border-box; }
+.tce-list { overflow-anchor: none; }
+.tce-pad { position: relative; flex: 0 0 auto; }
+.tce-win { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
+.tce-row { height: 46px; padding-top: 2px; padding-bottom: 2px; box-sizing: border-box; overflow: hidden; }
+.tce-name b { line-height: 1.15; max-height: 2.3em; overflow: hidden; }
+.tce-name span { line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
